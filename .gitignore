@@ -6,3 +6,14 @@ node_modules
 # CDK asset staging directory
 .cdk.staging
 cdk.out
+
+# Parcel default cache directory
+.parcel-cache
+
+.idea
+
+# Exclude jsii outdir
+dist
+.jsii
+tsconfig.json
+tsconfig.tsbuildinfo
