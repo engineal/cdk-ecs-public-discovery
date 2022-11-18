@@ -1,6 +1,6 @@
 /* eslint-disable no-console,no-process-env */
 import * as AWS from 'aws-sdk';
-import * as AWSXRay from 'aws-xray-sdk';
+import * as AWSXRay from 'aws-xray-sdk-core';
 import {EventBridgeHandler} from 'aws-lambda';
 
 const ec2Client = AWSXRay.captureAWSClient(new AWS.EC2());
@@ -42,37 +42,108 @@ const getPublicIpForTask = async (task: AWS.ECS.Task): Promise<string> => {
     return publicIp;
 };
 
-const getResourceRecordSetByIdentifier = async (setIdentifier: string): Promise<AWS.Route53.ResourceRecordSet | undefined> => {
-    const predicate = (resourceRecordSet: AWS.Route53.ResourceRecordSet) => resourceRecordSet.MultiValueAnswer &&
-        resourceRecordSet.Type === 'A' && resourceRecordSet.SetIdentifier === setIdentifier;
-
-    let resourceRecordSetsResponse = await route53Client.listResourceRecordSets({
-        HostedZoneId: hostedZoneId
+const handleTaskRunning = async (taskArn: string, setIdentifier: string, publicIp: string) => {
+    const tagsResponse = await ecsClient.listTagsForResource({
+        resourceArn: taskArn
     }).promise();
 
-    let resourceRecordSet = resourceRecordSetsResponse.ResourceRecordSets.find(predicate);
+    const nameTag = tagsResponse.tags?.find(tag => tag.key === 'public-discovery:name')?.value;
+
+    if (!nameTag) {
+        throw new Error(`${taskArn} does not have the 'public-discovery:name' tag.`);
+    }
+    const name = `${nameTag}.${hostedZoneName}`;
+    const ttlTag = tagsResponse.tags?.find(tag => tag.key === 'public-discovery:ttl')?.value;
+    const ttl = ttlTag ? Number(ttlTag) : DEFAULT_TTL;
+
+    console.log(`UPSERT '${name}' with address '${publicIp}' for set '${setIdentifier}'.`);
+
+    await route53Client.changeResourceRecordSets({
+        ChangeBatch: {
+            Changes: [{
+                Action: 'UPSERT',
+                ResourceRecordSet: {
+                    MultiValueAnswer: true,
+                    Name: name,
+                    ResourceRecords: [{Value: publicIp}],
+                    SetIdentifier: setIdentifier,
+                    TTL: ttl,
+                    Type: 'A'
+                }
+            }]
+        },
+        HostedZoneId: hostedZoneId
+    }).promise();
+};
+
+const getResourceRecordSetByIdentifier = async (
+    setIdentifier: string,
+    startRecordIdentifier?: string,
+    startRecordName?: string,
+    startRecordType?: string
+// eslint-disable-next-line max-params
+): Promise<AWS.Route53.ResourceRecordSet | undefined> => {
+    const resourceRecordSetsResponse = await route53Client.listResourceRecordSets({
+        HostedZoneId: hostedZoneId,
+        StartRecordIdentifier: startRecordIdentifier,
+        StartRecordName: startRecordName,
+        StartRecordType: startRecordType
+    }).promise();
+
+    const resourceRecordSet = resourceRecordSetsResponse.ResourceRecordSets.find(rrs => rrs.MultiValueAnswer &&
+        rrs.Type === 'A' && rrs.SetIdentifier === setIdentifier);
 
     if (resourceRecordSet) {
         return resourceRecordSet;
     }
 
-    while (resourceRecordSetsResponse.IsTruncated) {
-        // eslint-disable-next-line no-await-in-loop
-        resourceRecordSetsResponse = await route53Client.listResourceRecordSets({
-            HostedZoneId: hostedZoneId,
-            StartRecordIdentifier: resourceRecordSetsResponse.NextRecordIdentifier,
-            StartRecordName: resourceRecordSetsResponse.NextRecordName,
-            StartRecordType: resourceRecordSetsResponse.NextRecordType
-        }).promise();
-
-        resourceRecordSet = resourceRecordSetsResponse.ResourceRecordSets.find(predicate);
-
-        if (resourceRecordSet) {
-            return resourceRecordSet;
-        }
+    if (resourceRecordSetsResponse.IsTruncated) {
+        return getResourceRecordSetByIdentifier(
+            setIdentifier,
+            resourceRecordSetsResponse.NextRecordIdentifier,
+            resourceRecordSetsResponse.NextRecordName,
+            resourceRecordSetsResponse.NextRecordType
+        );
     }
 
+    // eslint-disable-next-line no-undefined
     return undefined;
+};
+
+const handleTaskStopped = async (taskArn: string, setIdentifier: string) => {
+    const resourceRecordSet = await getResourceRecordSetByIdentifier(setIdentifier);
+
+    if (!resourceRecordSet) {
+        console.log(`No resource record sets found with set identifier: '${setIdentifier}'.`);
+
+        return;
+    }
+
+    // eslint-disable-next-line no-magic-numbers
+    const publicIp = resourceRecordSet.ResourceRecords?.[0].Value;
+
+    if (!publicIp) {
+        throw new Error(`${taskArn} does not have a public ip address.`);
+    }
+
+    console.log(`DELETE '${resourceRecordSet.Name}' with address '${publicIp}' for set '${setIdentifier}'.`);
+
+    await route53Client.changeResourceRecordSets({
+        ChangeBatch: {
+            Changes: [{
+                Action: 'DELETE',
+                ResourceRecordSet: {
+                    MultiValueAnswer: true,
+                    Name: resourceRecordSet.Name,
+                    ResourceRecords: [{Value: publicIp}],
+                    SetIdentifier: setIdentifier,
+                    TTL: resourceRecordSet.TTL,
+                    Type: 'A'
+                }
+            }]
+        },
+        HostedZoneId: hostedZoneId
+    }).promise();
 };
 
 export const handler: EventBridgeHandler<'ECS Task State Change', AWS.ECS.Task, void> = async event => {
@@ -86,71 +157,10 @@ export const handler: EventBridgeHandler<'ECS Task State Change', AWS.ECS.Task, 
     const setIdentifier = taskArn.substring(taskArn.lastIndexOf('/') + 1);
 
     if (event.detail.desiredStatus === 'RUNNING') {
-        const tagsResponse = await ecsClient.listTagsForResource({
-            resourceArn: taskArn
-        }).promise();
-
-        const nameTag = tagsResponse.tags?.find(tag => tag.key === 'public-discovery:name')?.value;
-
-        if (!nameTag) {
-            throw new Error(`${taskArn} does not have the 'public-discovery:name' tag.`);
-        }
-        const name = `${nameTag}.${hostedZoneName}`;
         const publicIp = await getPublicIpForTask(event.detail);
-        const ttlTag = tagsResponse.tags?.find(tag => tag.key === 'public-discovery:ttl')?.value;
-        const ttl = ttlTag ? Number(ttlTag) : DEFAULT_TTL;
 
-        console.log(`UPSERT '${name}' with address '${publicIp}' for set '${setIdentifier}'.`);
-
-        await route53Client.changeResourceRecordSets({
-            ChangeBatch: {
-                Changes: [{
-                    Action: 'UPSERT',
-                    ResourceRecordSet: {
-                        MultiValueAnswer: true,
-                        Name: name,
-                        ResourceRecords: [{Value: publicIp}],
-                        SetIdentifier: setIdentifier,
-                        TTL: ttl,
-                        Type: 'A'
-                    }
-                }]
-            },
-            HostedZoneId: hostedZoneId
-        }).promise();
+        await handleTaskRunning(taskArn, setIdentifier, publicIp);
     } else {
-        const resourceRecordSet = await getResourceRecordSetByIdentifier(setIdentifier);
-
-        if (!resourceRecordSet) {
-            console.log(`No resource record sets found with set identifier: '${setIdentifier}'.`);
-
-            return;
-        }
-
-        // eslint-disable-next-line no-magic-numbers
-        const publicIp = resourceRecordSet.ResourceRecords?.[0].Value;
-
-        if (!publicIp) {
-            throw new Error(`${taskArn} does not have a public ip address.`);
-        }
-
-        console.log(`DELETE '${resourceRecordSet.Name}' with address '${publicIp}' for set '${setIdentifier}'.`);
-
-        await route53Client.changeResourceRecordSets({
-            ChangeBatch: {
-                Changes: [{
-                    Action: 'DELETE',
-                    ResourceRecordSet: {
-                        MultiValueAnswer: true,
-                        Name: resourceRecordSet.Name,
-                        ResourceRecords: [{Value: publicIp}],
-                        SetIdentifier: setIdentifier,
-                        TTL: resourceRecordSet.TTL,
-                        Type: 'A'
-                    }
-                }]
-            },
-            HostedZoneId: hostedZoneId
-        }).promise();
+        await handleTaskStopped(taskArn, setIdentifier);
     }
 };

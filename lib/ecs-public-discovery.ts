@@ -53,6 +53,7 @@ export class EcsPublicDiscovery extends Construct {
 
     private readonly cluster: ecs.ICluster;
 
+    // eslint-disable-next-line max-lines-per-function
     constructor(scope: Construct, id: string, props: EcsPublicDiscoveryProps) {
         super(scope, id);
 
@@ -96,7 +97,7 @@ export class EcsPublicDiscovery extends Construct {
             })]
         }));
 
-        const route53UpdaterFunctionRule = new events.Rule(this, 'Route53UpdaterFunctionRule', {
+        new events.Rule(this, 'Route53UpdaterFunctionRule', {
             eventPattern: {
                 detail: {
                     clusterArn: [props.cluster.clusterArn],
@@ -106,9 +107,7 @@ export class EcsPublicDiscovery extends Construct {
                 detailType: ['ECS Task State Change'],
                 source: ['aws.ecs']
             }
-        });
-
-        route53UpdaterFunctionRule.addTarget(new eventsTargets.LambdaFunction(route53UpdaterFunction));
+        }).addTarget(new eventsTargets.LambdaFunction(route53UpdaterFunction));
     }
 
     addService(options: ServiceOptions) {
