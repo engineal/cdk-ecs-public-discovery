@@ -1,4 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import {EcsPublicDiscovery} from '../lib';
@@ -6,11 +7,6 @@ import {Template} from 'aws-cdk-lib/assertions';
 
 test('Lambda function created', () => {
     const stack = new cdk.Stack();
-    const taskDefinition = new ecs.FargateTaskDefinition(stack, 'TestTaskDefinition');
-
-    taskDefinition.addContainer('TestContainer', {
-        image: ecs.ContainerImage.fromRegistry('hello-world')
-    });
 
     const cluster = new ecs.Cluster(stack, 'TestCluster');
     const hostedZone = route53.HostedZone.fromHostedZoneAttributes(stack, 'HostedZone', {
@@ -45,11 +41,6 @@ test('Lambda function created', () => {
 // eslint-disable-next-line max-lines-per-function
 test('Permissions granted', () => {
     const stack = new cdk.Stack();
-    const taskDefinition = new ecs.FargateTaskDefinition(stack, 'TestTaskDefinition');
-
-    taskDefinition.addContainer('TestContainer', {
-        image: ecs.ContainerImage.fromRegistry('hello-world')
-    });
 
     const cluster = new ecs.Cluster(stack, 'TestCluster');
     const hostedZone = route53.HostedZone.fromHostedZoneAttributes(stack, 'HostedZone', {
@@ -72,28 +63,17 @@ test('Permissions granted', () => {
                     Action: 'ecs:ListTagsForResource',
                     Effect: 'Allow',
                     Resource: {
-                        'Fn::Join': [
-                            '',
-                            [
-                                'arn:',
-                                {
-                                    Ref: 'AWS::Partition'
-                                },
-                                ':ecs:',
-                                {
-                                    Ref: 'AWS::Region'
-                                },
-                                ':',
-                                {
-                                    Ref: 'AWS::AccountId'
-                                },
-                                ':task/',
-                                {
-                                    Ref: 'TestClusterE0095054'
-                                },
-                                '/*'
-                            ]
-                        ]
+                        'Fn::Join': ['', [
+                            'arn:',
+                            {Ref: 'AWS::Partition'},
+                            ':ecs:',
+                            {Ref: 'AWS::Region'},
+                            ':',
+                            {Ref: 'AWS::AccountId'},
+                            ':task/',
+                            {Ref: 'TestClusterE0095054'},
+                            '/*'
+                        ]]
                     }
                 },
                 {
@@ -123,11 +103,6 @@ test('Permissions granted', () => {
 
 test('Rule created', () => {
     const stack = new cdk.Stack();
-    const taskDefinition = new ecs.FargateTaskDefinition(stack, 'TestTaskDefinition');
-
-    taskDefinition.addContainer('TestContainer', {
-        image: ecs.ContainerImage.fromRegistry('hello-world')
-    });
 
     const cluster = new ecs.Cluster(stack, 'TestCluster');
     const hostedZone = route53.HostedZone.fromHostedZoneAttributes(stack, 'HostedZone', {
@@ -170,13 +145,8 @@ test('Rule created', () => {
     });
 });
 
-test('Tags added to service', () => {
+test('Tags added to Fargate service', () => {
     const stack = new cdk.Stack();
-    const taskDefinition = new ecs.FargateTaskDefinition(stack, 'TestTaskDefinition');
-
-    taskDefinition.addContainer('TestContainer', {
-        image: ecs.ContainerImage.fromRegistry('hello-world')
-    });
 
     const cluster = new ecs.Cluster(stack, 'TestCluster');
     const hostedZone = route53.HostedZone.fromHostedZoneAttributes(stack, 'HostedZone', {
@@ -187,6 +157,12 @@ test('Tags added to service', () => {
     const ecsPublicDiscovery = new EcsPublicDiscovery(stack, 'EcsPublicDiscovery', {
         cluster,
         hostedZone
+    });
+
+    const taskDefinition = new ecs.FargateTaskDefinition(stack, 'TestTaskDefinition');
+
+    taskDefinition.addContainer('TestContainer', {
+        image: ecs.ContainerImage.fromRegistry('hello-world')
     });
 
     const service = new ecs.FargateService(stack, 'TestService', {
@@ -216,4 +192,130 @@ test('Tags added to service', () => {
             }
         ]
     });
+});
+
+// eslint-disable-next-line max-lines-per-function,max-statements
+test('Tags added to EC2 service', () => {
+    const stack = new cdk.Stack();
+
+    const cluster = new ecs.Cluster(stack, 'TestCluster');
+
+    cluster.addCapacity('EC2 Capacity', {
+        instanceType: ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE4_GRAVITON, ec2.InstanceSize.NANO)
+    });
+
+    const hostedZone = route53.HostedZone.fromHostedZoneAttributes(stack, 'HostedZone', {
+        hostedZoneId: 'Z1R8UBAEXAMPLE',
+        zoneName: 'example.com'
+    });
+
+    const ecsPublicDiscovery = new EcsPublicDiscovery(stack, 'EcsPublicDiscovery', {
+        cluster,
+        hostedZone
+    });
+
+    const taskDefinition = new ecs.Ec2TaskDefinition(stack, 'TestTaskDefinition', {
+        networkMode: ecs.NetworkMode.AWS_VPC
+    });
+
+    taskDefinition.addContainer('TestContainer', {
+        image: ecs.ContainerImage.fromRegistry('hello-world'),
+        memoryLimitMiB: 256
+    });
+
+    const service = new ecs.Ec2Service(stack, 'TestService', {
+        assignPublicIp: true,
+        cluster,
+        taskDefinition
+    });
+
+    ecsPublicDiscovery.addService({
+        // eslint-disable-next-line no-magic-numbers
+        dnsTtl: cdk.Duration.minutes(1),
+        name: 'test',
+        service
+    });
+
+    const template = Template.fromStack(stack);
+
+    template.hasResourceProperties('AWS::ECS::Service', {
+        Tags: [
+            {
+                Key: 'public-discovery:name',
+                Value: 'test'
+            },
+            {
+                Key: 'public-discovery:ttl',
+                Value: '60'
+            }
+        ]
+    });
+});
+
+test('Error on adding service in different cluster', () => {
+    const stack = new cdk.Stack();
+
+    const cluster1 = new ecs.Cluster(stack, 'TestCluster1');
+    const hostedZone = route53.HostedZone.fromHostedZoneAttributes(stack, 'HostedZone', {
+        hostedZoneId: 'Z1R8UBAEXAMPLE',
+        zoneName: 'example.com'
+    });
+
+    const ecsPublicDiscovery = new EcsPublicDiscovery(stack, 'EcsPublicDiscovery', {
+        cluster: cluster1,
+        hostedZone
+    });
+
+    const cluster2 = new ecs.Cluster(stack, 'TestCluster2');
+    const taskDefinition = new ecs.FargateTaskDefinition(stack, 'TestTaskDefinition');
+
+    taskDefinition.addContainer('TestContainer', {
+        image: ecs.ContainerImage.fromRegistry('hello-world')
+    });
+
+    const service = new ecs.FargateService(stack, 'TestService', {
+        assignPublicIp: true,
+        cluster: cluster2,
+        taskDefinition
+    });
+
+    expect(() => ecsPublicDiscovery.addService({
+        // eslint-disable-next-line no-magic-numbers
+        dnsTtl: cdk.Duration.minutes(1),
+        name: 'test',
+        service
+    })).toThrow('The service must be part of the same cluster!');
+});
+
+test('Error on adding service with wrong network mode', () => {
+    const stack = new cdk.Stack();
+
+    const cluster = new ecs.Cluster(stack, 'TestCluster');
+    const hostedZone = route53.HostedZone.fromHostedZoneAttributes(stack, 'HostedZone', {
+        hostedZoneId: 'Z1R8UBAEXAMPLE',
+        zoneName: 'example.com'
+    });
+
+    const ecsPublicDiscovery = new EcsPublicDiscovery(stack, 'EcsPublicDiscovery', {
+        cluster,
+        hostedZone
+    });
+
+    const taskDefinition = new ecs.Ec2TaskDefinition(stack, 'TestTaskDefinition');
+
+    taskDefinition.addContainer('TestContainer', {
+        image: ecs.ContainerImage.fromRegistry('hello-world')
+    });
+
+    const service = new ecs.Ec2Service(stack, 'TestService', {
+        cluster,
+        taskDefinition
+    });
+
+    expect(() => ecsPublicDiscovery.addService({
+        // eslint-disable-next-line no-magic-numbers
+        dnsTtl: cdk.Duration.minutes(1),
+        name: 'test',
+        service
+    })).toThrow('Cannot use ECS public discovery if NetworkMode is not AWS_VPC.');
 });

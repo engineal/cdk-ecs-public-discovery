@@ -21,13 +21,13 @@ if (!hostedZoneName) {
     throw new Error('HOSTED_ZONE_NAME environment variable is not set!');
 }
 
-const getPublicIpForTask = async (task: AWS.ECS.Task): Promise<string> => {
+const getPublicIpForTask = async (task: AWS.ECS.Task, taskId: string): Promise<string> => {
     const networkInterfaceId = task.attachments
         ?.find(attachment => attachment.type === 'eni')?.details
         ?.find(details => details.name === 'networkInterfaceId')?.value;
 
     if (!networkInterfaceId) {
-        throw new Error(`${task.taskArn} does not have a network interface.`);
+        throw new Error(`Task ${taskId} does not have a network interface.`);
     }
     const networkInterfacesResponse = await ec2Client.describeNetworkInterfaces({
         NetworkInterfaceIds: [networkInterfaceId]
@@ -36,13 +36,13 @@ const getPublicIpForTask = async (task: AWS.ECS.Task): Promise<string> => {
     const publicIp = networkInterfacesResponse.NetworkInterfaces?.[0].Association?.PublicIp;
 
     if (!publicIp) {
-        throw new Error(`${task.taskArn} does not have a public ip address.`);
+        throw new Error(`Task ${taskId} does not have a public ip address.`);
     }
 
     return publicIp;
 };
 
-const handleTaskRunning = async (taskArn: string, setIdentifier: string, publicIp: string) => {
+const handleTaskRunning = async (taskArn: string, taskId: string, publicIp: string) => {
     const tagsResponse = await ecsClient.listTagsForResource({
         resourceArn: taskArn
     }).promise();
@@ -50,13 +50,13 @@ const handleTaskRunning = async (taskArn: string, setIdentifier: string, publicI
     const nameTag = tagsResponse.tags?.find(tag => tag.key === 'public-discovery:name')?.value;
 
     if (!nameTag) {
-        throw new Error(`${taskArn} does not have the 'public-discovery:name' tag.`);
+        throw new Error(`Task ${taskId} does not have the 'public-discovery:name' tag.`);
     }
     const name = `${nameTag}.${hostedZoneName}`;
     const ttlTag = tagsResponse.tags?.find(tag => tag.key === 'public-discovery:ttl')?.value;
     const ttl = ttlTag ? Number(ttlTag) : DEFAULT_TTL;
 
-    console.log(`UPSERT '${name}' with address '${publicIp}' for set '${setIdentifier}'.`);
+    console.log(`UPSERT '${name}' with address '${publicIp}' for set '${taskId}'.`);
 
     await route53Client.changeResourceRecordSets({
         ChangeBatch: {
@@ -66,7 +66,7 @@ const handleTaskRunning = async (taskArn: string, setIdentifier: string, publicI
                     MultiValueAnswer: true,
                     Name: name,
                     ResourceRecords: [{Value: publicIp}],
-                    SetIdentifier: setIdentifier,
+                    SetIdentifier: taskId,
                     TTL: ttl,
                     Type: 'A'
                 }
@@ -110,23 +110,19 @@ const getResourceRecordSetByIdentifier = async (
     return undefined;
 };
 
-const handleTaskStopped = async (taskArn: string, setIdentifier: string) => {
-    const resourceRecordSet = await getResourceRecordSetByIdentifier(setIdentifier);
+const handleTaskStopped = async (taskId: string) => {
+    const resourceRecordSet = await getResourceRecordSetByIdentifier(taskId);
 
-    if (!resourceRecordSet) {
-        console.log(`No resource record sets found with set identifier: '${setIdentifier}'.`);
+    if (!resourceRecordSet?.ResourceRecords) {
+        console.log(`No resource record sets found with set identifier: '${taskId}'.`);
 
         return;
     }
 
     // eslint-disable-next-line no-magic-numbers
-    const publicIp = resourceRecordSet.ResourceRecords?.[0].Value;
+    const publicIp = resourceRecordSet.ResourceRecords[0].Value;
 
-    if (!publicIp) {
-        throw new Error(`${taskArn} does not have a public ip address.`);
-    }
-
-    console.log(`DELETE '${resourceRecordSet.Name}' with address '${publicIp}' for set '${setIdentifier}'.`);
+    console.log(`DELETE '${resourceRecordSet.Name}' with address '${publicIp}' for set '${taskId}'.`);
 
     await route53Client.changeResourceRecordSets({
         ChangeBatch: {
@@ -136,7 +132,7 @@ const handleTaskStopped = async (taskArn: string, setIdentifier: string) => {
                     MultiValueAnswer: true,
                     Name: resourceRecordSet.Name,
                     ResourceRecords: [{Value: publicIp}],
-                    SetIdentifier: setIdentifier,
+                    SetIdentifier: taskId,
                     TTL: resourceRecordSet.TTL,
                     Type: 'A'
                 }
@@ -154,13 +150,13 @@ export const handler: EventBridgeHandler<'ECS Task State Change', AWS.ECS.Task, 
     }
 
     // eslint-disable-next-line no-magic-numbers
-    const setIdentifier = taskArn.substring(taskArn.lastIndexOf('/') + 1);
+    const taskId = taskArn.substring(taskArn.lastIndexOf('/') + 1);
 
     if (event.detail.desiredStatus === 'RUNNING') {
-        const publicIp = await getPublicIpForTask(event.detail);
+        const publicIp = await getPublicIpForTask(event.detail, taskId);
 
-        await handleTaskRunning(taskArn, setIdentifier, publicIp);
+        await handleTaskRunning(taskArn, taskId, publicIp);
     } else {
-        await handleTaskStopped(taskArn, setIdentifier);
+        await handleTaskStopped(taskId);
     }
 };
