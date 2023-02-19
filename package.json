@@ -48,7 +48,7 @@
     "jest": "^27.5.1",
     "jsii": "^1.70.0",
     "jsii-pacmak": "^1.70.0",
-    "jsii-release": "^0.2.515",
+    "jsii-release": "^0.2.598",
     "mocked-env": "^1.3.5",
     "semantic-release": "^19.0.5",
     "ts-jest": "^27.1.4",
