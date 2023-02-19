@@ -4,3 +4,22 @@
 # CDK asset staging directory
 .cdk.staging
 cdk.out
+
+# Parcel default cache directory
+.parcel-cache
+
+.idea
+.github
+.husky
+test
+
+.eslintrc.json
+.releaserc
+jest.config.js
+tsconfig.json
+
+# Exclude jsii outdir
+dist
+
+# Include .jsii
+!.jsii
