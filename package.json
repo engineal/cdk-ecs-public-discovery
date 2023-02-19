@@ -1,6 +1,6 @@
 {
   "name": "cdk-ecs-public-discovery",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "An AWS CDK library that provides ECS service discovery functionality for an ECS task's public IP address",
   "author": "Aaron Lucia",
   "license": "Apache-2.0",
