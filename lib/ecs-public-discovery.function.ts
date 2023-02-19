@@ -4,7 +4,6 @@ import * as AWSXRay from 'aws-xray-sdk-core';
 import {EventBridgeHandler} from 'aws-lambda';
 
 const ec2Client = AWSXRay.captureAWSClient(new AWS.EC2());
-const ecsClient = AWSXRay.captureAWSClient(new AWS.ECS());
 const route53Client = AWSXRay.captureAWSClient(new AWS.Route53());
 
 const DEFAULT_TTL = 60;
@@ -21,7 +20,7 @@ if (!hostedZoneName) {
     throw new Error('HOSTED_ZONE_NAME environment variable is not set!');
 }
 
-const getPublicIpForTask = async (task: AWS.ECS.Task, taskId: string): Promise<string> => {
+const getNetworkInterfaceForTask = async (task: AWS.ECS.Task, taskId: string): Promise<AWS.EC2.NetworkInterface> => {
     const networkInterfaceId = task.attachments
         ?.find(attachment => attachment.type === 'eni')?.details
         ?.find(details => details.name === 'networkInterfaceId')?.value;
@@ -32,28 +31,41 @@ const getPublicIpForTask = async (task: AWS.ECS.Task, taskId: string): Promise<s
     const networkInterfacesResponse = await ec2Client.describeNetworkInterfaces({
         NetworkInterfaceIds: [networkInterfaceId]
     }).promise();
+
+    if (!networkInterfacesResponse.NetworkInterfaces) {
+        throw new Error('DescribeNetworkInterfaces did not return any network interfaces!');
+    }
+
     // eslint-disable-next-line no-magic-numbers
-    const publicIp = networkInterfacesResponse.NetworkInterfaces?.[0].Association?.PublicIp;
+    return networkInterfacesResponse.NetworkInterfaces[0];
+};
+
+const getTag = (key: string, tags?: AWS.EC2.TagList): string | undefined => tags?.find(tag => tag.Key === key)?.Value;
+
+const getRequiredTag = (key: string, error: string, tags?: AWS.EC2.TagList): string => {
+    const tag = getTag(key, tags);
+
+    if (!tag) {
+        throw new Error(error);
+    }
+
+    return tag;
+};
+
+const handleTaskRunning = async (taskId: string, networkInterface: AWS.EC2.NetworkInterface) => {
+    const nameTag = getRequiredTag(
+        'public-discovery:name',
+        `Task ${taskId} does not have the 'public-discovery:name' tag.`,
+        networkInterface.TagSet
+    );
+    const name = `${nameTag}.${hostedZoneName}`;
+    const publicIp = networkInterface.Association?.PublicIp;
 
     if (!publicIp) {
         throw new Error(`Task ${taskId} does not have a public ip address.`);
     }
 
-    return publicIp;
-};
-
-const handleTaskRunning = async (taskArn: string, taskId: string, publicIp: string) => {
-    const tagsResponse = await ecsClient.listTagsForResource({
-        resourceArn: taskArn
-    }).promise();
-
-    const nameTag = tagsResponse.tags?.find(tag => tag.key === 'public-discovery:name')?.value;
-
-    if (!nameTag) {
-        throw new Error(`Task ${taskId} does not have the 'public-discovery:name' tag.`);
-    }
-    const name = `${nameTag}.${hostedZoneName}`;
-    const ttlTag = tagsResponse.tags?.find(tag => tag.key === 'public-discovery:ttl')?.value;
+    const ttlTag = getTag('public-discovery:ttl', networkInterface.TagSet);
     const ttl = ttlTag ? Number(ttlTag) : DEFAULT_TTL;
 
     console.log(`UPSERT '${name}' with address '${publicIp}' for set '${taskId}'.`);
@@ -153,9 +165,9 @@ export const handler: EventBridgeHandler<'ECS Task State Change', AWS.ECS.Task, 
     const taskId = taskArn.substring(taskArn.lastIndexOf('/') + 1);
 
     if (event.detail.desiredStatus === 'RUNNING') {
-        const publicIp = await getPublicIpForTask(event.detail, taskId);
+        const networkInterface = await getNetworkInterfaceForTask(event.detail, taskId);
 
-        await handleTaskRunning(taskArn, taskId, publicIp);
+        await handleTaskRunning(taskId, networkInterface);
     } else {
         await handleTaskStopped(taskId);
     }

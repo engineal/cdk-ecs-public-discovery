@@ -4,16 +4,12 @@ import {Context, EventBridgeEvent} from 'aws-lambda';
 import mockedEnv, {RestoreFn} from 'mocked-env';
 
 const mockedDescribeNetworkInterfaces = jest.fn();
-const listTagsForResource = jest.fn();
 const mockedListResourceRecordSets = jest.fn();
 const mockedChangeResourceRecordSets = jest.fn();
 
 jest.mock('aws-sdk', () => ({
     EC2: jest.fn(() => ({
         describeNetworkInterfaces: mockedDescribeNetworkInterfaces
-    })),
-    ECS: jest.fn(() => ({
-        listTagsForResource
     })),
     Route53: jest.fn(() => ({
         changeResourceRecordSets: mockedChangeResourceRecordSets,
@@ -88,52 +84,41 @@ test('Error on unsupported event', async () => {
 const testRunningEvent: EventBridgeEvent<'ECS Task State Change', AWS.ECS.Task> = {
     'account': '111122223333',
     'detail': {
-        attachments: [
-            {
-                details: [
-                    {
-                        name: 'subnetId',
-                        value: 'subnet-abcd1234'
-                    },
-                    {
-                        name: 'networkInterfaceId',
-                        value: 'eni-abcd1234'
-                    },
-                    {
-                        name: 'macAddress',
-                        value: '0a:98:eb:a7:29:ba'
-                    },
-                    {
-                        name: 'privateIPv4Address',
-                        value: '10.0.0.139'
-                    }
-                ],
-                id: '1789bcae-ddfb-4d10-8ebe-8ac87ddba5b8',
-                status: 'ATTACHED',
-                type: 'eni'
-            }
-        ],
+        attachments: [{
+            details: [{
+                name: 'subnetId',
+                value: 'subnet-abcd1234'
+            }, {
+                name: 'networkInterfaceId',
+                value: 'eni-abcd1234'
+            }, {
+                name: 'macAddress',
+                value: '0a:98:eb:a7:29:ba'
+            }, {
+                name: 'privateIPv4Address',
+                value: '10.0.0.139'
+            }],
+            id: '1789bcae-ddfb-4d10-8ebe-8ac87ddba5b8',
+            status: 'ATTACHED',
+            type: 'eni'
+        }],
         availabilityZone: 'us-west-2c',
         clusterArn: 'arn:aws:ecs:us-west-2:111122223333:cluster/FargateCluster',
         connectivity: 'CONNECTED',
-        containers: [
-            {
-                containerArn: 'arn:aws:ecs:us-west-2:111122223333:container/cf159fd6-3e3f-4a9e-84f9-66cbe726af01',
-                cpu: '0',
-                image: '111122223333.dkr.ecr.us-west-2.amazonaws.com/hello-repository:latest',
-                imageDigest: 'sha256:74b2c688c700ec95a93e478cdb959737c148df3fbf5ea706abe0318726e885e6',
-                lastStatus: 'RUNNING',
-                name: 'FargateApp',
-                networkInterfaces: [
-                    {
-                        attachmentId: '1789bcae-ddfb-4d10-8ebe-8ac87ddba5b8',
-                        privateIpv4Address: '10.0.0.139'
-                    }
-                ],
-                runtimeId: 'ad64cbc71c7fb31c55507ec24c9f77947132b03d48d9961115cf24f3b7307e1e',
-                taskArn: 'arn:aws:ecs:us-west-2:111122223333:task/FargateCluster/c13b4cb40f1f4fe4a2971f76ae5a47ad'
-            }
-        ],
+        containers: [{
+            containerArn: 'arn:aws:ecs:us-west-2:111122223333:container/cf159fd6-3e3f-4a9e-84f9-66cbe726af01',
+            cpu: '0',
+            image: '111122223333.dkr.ecr.us-west-2.amazonaws.com/hello-repository:latest',
+            imageDigest: 'sha256:74b2c688c700ec95a93e478cdb959737c148df3fbf5ea706abe0318726e885e6',
+            lastStatus: 'RUNNING',
+            name: 'FargateApp',
+            networkInterfaces: [{
+                attachmentId: '1789bcae-ddfb-4d10-8ebe-8ac87ddba5b8',
+                privateIpv4Address: '10.0.0.139'
+            }],
+            runtimeId: 'ad64cbc71c7fb31c55507ec24c9f77947132b03d48d9961115cf24f3b7307e1e',
+            taskArn: 'arn:aws:ecs:us-west-2:111122223333:task/FargateCluster/c13b4cb40f1f4fe4a2971f76ae5a47ad'
+        }],
         cpu: '256',
         desiredStatus: 'RUNNING',
         group: 'service:sample-fargate',
@@ -141,11 +126,7 @@ const testRunningEvent: EventBridgeEvent<'ECS Task State Change', AWS.ECS.Task> 
         launchType: 'FARGATE',
         memory: '512',
         overrides: {
-            containerOverrides: [
-                {
-                    name: 'FargateApp'
-                }
-            ]
+            containerOverrides: [{name: 'FargateApp'}]
         },
         platformVersion: '1.4.0',
         startedBy: 'ecs-svc/8698694698746607723',
@@ -164,7 +145,6 @@ const testRunningEvent: EventBridgeEvent<'ECS Task State Change', AWS.ECS.Task> 
     'version': '0'
 };
 
-// eslint-disable-next-line max-lines-per-function
 test('Running event upserts record with default TTL', async () => {
     restore = mockedEnv({
         HOSTED_ZONE_ID: 'Z1R8UBAEXAMPLE',
@@ -176,23 +156,15 @@ test('Running event upserts record with default TTL', async () => {
 
     mockedDescribeNetworkInterfaces.mockReturnValue({
         promise: () => Promise.resolve({
-            NetworkInterfaces: [
-                {
-                    Association: {
-                        PublicIp: '1.2.3.4'
-                    }
-                }
-            ]
-        })
-    });
-    listTagsForResource.mockReturnValue({
-        promise: () => Promise.resolve({
-            tags: [
-                {
-                    key: 'public-discovery:name',
-                    value: 'test'
-                }
-            ]
+            NetworkInterfaces: [{
+                Association: {
+                    PublicIp: '1.2.3.4'
+                },
+                TagSet: [{
+                    Key: 'public-discovery:name',
+                    Value: 'test'
+                }]
+            }]
         })
     });
     mockedChangeResourceRecordSets.mockReturnValue({
@@ -219,7 +191,6 @@ test('Running event upserts record with default TTL', async () => {
     });
 });
 
-// eslint-disable-next-line max-lines-per-function
 test('Running event upserts record with custom TTL', async () => {
     restore = mockedEnv({
         HOSTED_ZONE_ID: 'Z1R8UBAEXAMPLE',
@@ -231,27 +202,18 @@ test('Running event upserts record with custom TTL', async () => {
 
     mockedDescribeNetworkInterfaces.mockReturnValue({
         promise: () => Promise.resolve({
-            NetworkInterfaces: [
-                {
-                    Association: {
-                        PublicIp: '1.2.3.4'
-                    }
-                }
-            ]
-        })
-    });
-    listTagsForResource.mockReturnValue({
-        promise: () => Promise.resolve({
-            tags: [
-                {
-                    key: 'public-discovery:name',
-                    value: 'test'
+            NetworkInterfaces: [{
+                Association: {
+                    PublicIp: '1.2.3.4'
                 },
-                {
-                    key: 'public-discovery:ttl',
-                    value: '120'
-                }
-            ]
+                TagSet: [{
+                    Key: 'public-discovery:name',
+                    Value: 'test'
+                }, {
+                    Key: 'public-discovery:ttl',
+                    Value: '120'
+                }]
+            }]
         })
     });
     mockedChangeResourceRecordSets.mockReturnValue({
@@ -284,18 +246,16 @@ const testRunningWithoutNetworkInterfaceEvent: EventBridgeEvent<'ECS Task State 
         availabilityZone: 'us-west-2c',
         clusterArn: 'arn:aws:ecs:us-west-2:111122223333:cluster/FargateCluster',
         connectivity: 'CONNECTED',
-        containers: [
-            {
-                containerArn: 'arn:aws:ecs:us-west-2:111122223333:container/cf159fd6-3e3f-4a9e-84f9-66cbe726af01',
-                cpu: '0',
-                image: '111122223333.dkr.ecr.us-west-2.amazonaws.com/hello-repository:latest',
-                imageDigest: 'sha256:74b2c688c700ec95a93e478cdb959737c148df3fbf5ea706abe0318726e885e6',
-                lastStatus: 'RUNNING',
-                name: 'FargateApp',
-                runtimeId: 'ad64cbc71c7fb31c55507ec24c9f77947132b03d48d9961115cf24f3b7307e1e',
-                taskArn: 'arn:aws:ecs:us-west-2:111122223333:task/FargateCluster/c13b4cb40f1f4fe4a2971f76ae5a47ad'
-            }
-        ],
+        containers: [{
+            containerArn: 'arn:aws:ecs:us-west-2:111122223333:container/cf159fd6-3e3f-4a9e-84f9-66cbe726af01',
+            cpu: '0',
+            image: '111122223333.dkr.ecr.us-west-2.amazonaws.com/hello-repository:latest',
+            imageDigest: 'sha256:74b2c688c700ec95a93e478cdb959737c148df3fbf5ea706abe0318726e885e6',
+            lastStatus: 'RUNNING',
+            name: 'FargateApp',
+            runtimeId: 'ad64cbc71c7fb31c55507ec24c9f77947132b03d48d9961115cf24f3b7307e1e',
+            taskArn: 'arn:aws:ecs:us-west-2:111122223333:task/FargateCluster/c13b4cb40f1f4fe4a2971f76ae5a47ad'
+        }],
         cpu: '256',
         desiredStatus: 'RUNNING',
         group: 'service:sample-fargate',
@@ -303,11 +263,7 @@ const testRunningWithoutNetworkInterfaceEvent: EventBridgeEvent<'ECS Task State 
         launchType: 'FARGATE',
         memory: '512',
         overrides: {
-            containerOverrides: [
-                {
-                    name: 'FargateApp'
-                }
-            ]
+            containerOverrides: [{name: 'FargateApp'}]
         },
         platformVersion: '1.4.0',
         startedBy: 'ecs-svc/8698694698746607723',
@@ -350,9 +306,12 @@ test('Error on running event without public IP', async () => {
 
     mockedDescribeNetworkInterfaces.mockReturnValue({
         promise: () => Promise.resolve({
-            NetworkInterfaces: [
-                {}
-            ]
+            NetworkInterfaces: [{
+                TagSet: [{
+                    Key: 'public-discovery:name',
+                    Value: 'test'
+                }]
+            }]
         })
     });
 
@@ -371,18 +330,11 @@ test('Error on running event without name tag', async () => {
 
     mockedDescribeNetworkInterfaces.mockReturnValue({
         promise: () => Promise.resolve({
-            NetworkInterfaces: [
-                {
-                    Association: {
-                        PublicIp: '1.2.3.4'
-                    }
+            NetworkInterfaces: [{
+                Association: {
+                    PublicIp: '1.2.3.4'
                 }
-            ]
-        })
-    });
-    listTagsForResource.mockReturnValue({
-        promise: () => Promise.resolve({
-            tags: []
+            }]
         })
     });
 
@@ -393,52 +345,41 @@ test('Error on running event without name tag', async () => {
 const testStoppedEvent: EventBridgeEvent<'ECS Task State Change', AWS.ECS.Task> = {
     'account': '111122223333',
     'detail': {
-        attachments: [
-            {
-                details: [
-                    {
-                        name: 'subnetId',
-                        value: 'subnet-abcd1234'
-                    },
-                    {
-                        name: 'networkInterfaceId',
-                        value: 'eni-abcd1234'
-                    },
-                    {
-                        name: 'macAddress',
-                        value: '0a:98:eb:a7:29:ba'
-                    },
-                    {
-                        name: 'privateIPv4Address',
-                        value: '10.0.0.139'
-                    }
-                ],
-                id: '1789bcae-ddfb-4d10-8ebe-8ac87ddba5b8',
-                status: 'ATTACHED',
-                type: 'eni'
-            }
-        ],
+        attachments: [{
+            details: [{
+                name: 'subnetId',
+                value: 'subnet-abcd1234'
+            }, {
+                name: 'networkInterfaceId',
+                value: 'eni-abcd1234'
+            }, {
+                name: 'macAddress',
+                value: '0a:98:eb:a7:29:ba'
+            }, {
+                name: 'privateIPv4Address',
+                value: '10.0.0.139'
+            }],
+            id: '1789bcae-ddfb-4d10-8ebe-8ac87ddba5b8',
+            status: 'ATTACHED',
+            type: 'eni'
+        }],
         availabilityZone: 'us-west-2c',
         clusterArn: 'arn:aws:ecs:us-west-2:111122223333:cluster/FargateCluster',
         connectivity: 'CONNECTED',
-        containers: [
-            {
-                containerArn: 'arn:aws:ecs:us-west-2:111122223333:container/cf159fd6-3e3f-4a9e-84f9-66cbe726af01',
-                cpu: '0',
-                image: '111122223333.dkr.ecr.us-west-2.amazonaws.com/hello-repository:latest',
-                imageDigest: 'sha256:74b2c688c700ec95a93e478cdb959737c148df3fbf5ea706abe0318726e885e6',
-                lastStatus: 'RUNNING',
-                name: 'FargateApp',
-                networkInterfaces: [
-                    {
-                        attachmentId: '1789bcae-ddfb-4d10-8ebe-8ac87ddba5b8',
-                        privateIpv4Address: '10.0.0.139'
-                    }
-                ],
-                runtimeId: 'ad64cbc71c7fb31c55507ec24c9f77947132b03d48d9961115cf24f3b7307e1e',
-                taskArn: 'arn:aws:ecs:us-west-2:111122223333:task/FargateCluster/c13b4cb40f1f4fe4a2971f76ae5a47ad'
-            }
-        ],
+        containers: [{
+            containerArn: 'arn:aws:ecs:us-west-2:111122223333:container/cf159fd6-3e3f-4a9e-84f9-66cbe726af01',
+            cpu: '0',
+            image: '111122223333.dkr.ecr.us-west-2.amazonaws.com/hello-repository:latest',
+            imageDigest: 'sha256:74b2c688c700ec95a93e478cdb959737c148df3fbf5ea706abe0318726e885e6',
+            lastStatus: 'RUNNING',
+            name: 'FargateApp',
+            networkInterfaces: [{
+                attachmentId: '1789bcae-ddfb-4d10-8ebe-8ac87ddba5b8',
+                privateIpv4Address: '10.0.0.139'
+            }],
+            runtimeId: 'ad64cbc71c7fb31c55507ec24c9f77947132b03d48d9961115cf24f3b7307e1e',
+            taskArn: 'arn:aws:ecs:us-west-2:111122223333:task/FargateCluster/c13b4cb40f1f4fe4a2971f76ae5a47ad'
+        }],
         cpu: '256',
         desiredStatus: 'STOPPED',
         group: 'service:sample-fargate',
@@ -446,11 +387,7 @@ const testStoppedEvent: EventBridgeEvent<'ECS Task State Change', AWS.ECS.Task> 
         launchType: 'FARGATE',
         memory: '512',
         overrides: {
-            containerOverrides: [
-                {
-                    name: 'FargateApp'
-                }
-            ]
+            containerOverrides: [{name: 'FargateApp'}]
         },
         platformVersion: '1.4.0',
         startedBy: 'ecs-svc/8698694698746607723',
@@ -481,16 +418,14 @@ test('Stopped event deletes record', async () => {
     mockedListResourceRecordSets.mockReturnValue({
         promise: () => Promise.resolve({
             IsTruncated: false,
-            ResourceRecordSets: [
-                {
-                    MultiValueAnswer: true,
-                    Name: 'test.example.com',
-                    ResourceRecords: [{Value: '1.2.3.4'}],
-                    SetIdentifier: 'c13b4cb40f1f4fe4a2971f76ae5a47ad',
-                    TTL: 60,
-                    Type: 'A'
-                }
-            ]
+            ResourceRecordSets: [{
+                MultiValueAnswer: true,
+                Name: 'test.example.com',
+                ResourceRecords: [{Value: '1.2.3.4'}],
+                SetIdentifier: 'c13b4cb40f1f4fe4a2971f76ae5a47ad',
+                TTL: 60,
+                Type: 'A'
+            }]
         })
     });
 
@@ -531,24 +466,21 @@ test('Stopped event deletes 2nd record', async () => {
     mockedListResourceRecordSets.mockReturnValue({
         promise: () => Promise.resolve({
             IsTruncated: false,
-            ResourceRecordSets: [
-                {
-                    MultiValueAnswer: true,
-                    Name: 'test.example.com',
-                    ResourceRecords: [{Value: '5.6.7.8'}],
-                    SetIdentifier: '9256c379f1554f5f8b1d9546c164446e',
-                    TTL: 60,
-                    Type: 'A'
-                },
-                {
-                    MultiValueAnswer: true,
-                    Name: 'test.example.com',
-                    ResourceRecords: [{Value: '1.2.3.4'}],
-                    SetIdentifier: 'c13b4cb40f1f4fe4a2971f76ae5a47ad',
-                    TTL: 60,
-                    Type: 'A'
-                }
-            ]
+            ResourceRecordSets: [{
+                MultiValueAnswer: true,
+                Name: 'test.example.com',
+                ResourceRecords: [{Value: '5.6.7.8'}],
+                SetIdentifier: '9256c379f1554f5f8b1d9546c164446e',
+                TTL: 60,
+                Type: 'A'
+            }, {
+                MultiValueAnswer: true,
+                Name: 'test.example.com',
+                ResourceRecords: [{Value: '1.2.3.4'}],
+                SetIdentifier: 'c13b4cb40f1f4fe4a2971f76ae5a47ad',
+                TTL: 60,
+                Type: 'A'
+            }]
         })
     });
 
@@ -589,30 +521,26 @@ test('Stopped event deletes record on 2nd page', async () => {
     mockedListResourceRecordSets.mockReturnValueOnce({
         promise: () => Promise.resolve({
             IsTruncated: true,
-            ResourceRecordSets: [
-                {
-                    MultiValueAnswer: true,
-                    Name: 'test.example.com',
-                    ResourceRecords: [{Value: '5.6.7.8'}],
-                    SetIdentifier: '9256c379f1554f5f8b1d9546c164446e',
-                    TTL: 60,
-                    Type: 'A'
-                }
-            ]
+            ResourceRecordSets: [{
+                MultiValueAnswer: true,
+                Name: 'test.example.com',
+                ResourceRecords: [{Value: '5.6.7.8'}],
+                SetIdentifier: '9256c379f1554f5f8b1d9546c164446e',
+                TTL: 60,
+                Type: 'A'
+            }]
         })
     }).mockReturnValueOnce({
         promise: () => Promise.resolve({
             IsTruncated: false,
-            ResourceRecordSets: [
-                {
-                    MultiValueAnswer: true,
-                    Name: 'test.example.com',
-                    ResourceRecords: [{Value: '1.2.3.4'}],
-                    SetIdentifier: 'c13b4cb40f1f4fe4a2971f76ae5a47ad',
-                    TTL: 60,
-                    Type: 'A'
-                }
-            ]
+            ResourceRecordSets: [{
+                MultiValueAnswer: true,
+                Name: 'test.example.com',
+                ResourceRecords: [{Value: '1.2.3.4'}],
+                SetIdentifier: 'c13b4cb40f1f4fe4a2971f76ae5a47ad',
+                TTL: 60,
+                Type: 'A'
+            }]
         })
     });
 

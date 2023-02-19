@@ -53,7 +53,6 @@ export class EcsPublicDiscovery extends Construct {
 
     private readonly cluster: ecs.ICluster;
 
-    // eslint-disable-next-line max-lines-per-function
     constructor(scope: Construct, id: string, props: EcsPublicDiscoveryProps) {
         super(scope, id);
 
@@ -71,14 +70,6 @@ export class EcsPublicDiscovery extends Construct {
             tracing: props.tracing
         });
 
-        route53UpdaterFunction.addToRolePolicy(new iam.PolicyStatement({
-            actions: ['ecs:ListTagsForResource'],
-            resources: [Stack.of(props.cluster).formatArn({
-                resource: 'task',
-                resourceName: `${props.cluster.clusterName}/*`,
-                service: 'ecs'
-            })]
-        }));
         route53UpdaterFunction.addToRolePolicy(new iam.PolicyStatement({
             actions: ['ec2:DescribeNetworkInterfaces'],
             resources: ['*']

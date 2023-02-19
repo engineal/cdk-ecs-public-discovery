@@ -38,7 +38,6 @@ test('Lambda function created', () => {
     });
 });
 
-// eslint-disable-next-line max-lines-per-function
 test('Permissions granted', () => {
     const stack = new cdk.Stack();
 
@@ -59,23 +58,6 @@ test('Permissions granted', () => {
     template.hasResourceProperties('AWS::IAM::Policy', {
         PolicyDocument: {
             Statement: [
-                {
-                    Action: 'ecs:ListTagsForResource',
-                    Effect: 'Allow',
-                    Resource: {
-                        'Fn::Join': ['', [
-                            'arn:',
-                            {Ref: 'AWS::Partition'},
-                            ':ecs:',
-                            {Ref: 'AWS::Region'},
-                            ':',
-                            {Ref: 'AWS::AccountId'},
-                            ':task/',
-                            {Ref: 'TestClusterE0095054'},
-                            '/*'
-                        ]]
-                    }
-                },
                 {
                     Action: 'ec2:DescribeNetworkInterfaces',
                     Effect: 'Allow',
