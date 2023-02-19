@@ -39,7 +39,7 @@
     "@types/node": "^18.11.9",
     "@types/prettier": "2.6.0",
     "@typescript-eslint/eslint-plugin": "^5.42.0",
-    "@typescript-eslint/parser": "^5.42.0",
+    "@typescript-eslint/parser": "^5.52.0",
     "aws-cdk-lib": "2.50.0",
     "constructs": "^10.0.0",
     "eslint": "^8.26.0",
