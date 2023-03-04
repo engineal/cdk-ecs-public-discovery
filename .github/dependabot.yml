@@ -2,6 +2,15 @@ version: 2
 updates:
   - package-ecosystem: npm
     directory: "/"
+    ignore:
+      # These dependencies follow the versions in the cdk init templates
+      - dependency-name: "@types/jest"
+      - dependency-name: "@types/node"
+      - dependency-name: "aws-cdk-lib"
+      - dependency-name: "constructs"
+      - dependency-name: "jest"
+      - dependency-name: "ts-jest"
+      - dependency-name: "typescript"
     schedule:
       interval: "daily"
   - package-ecosystem: github-actions
