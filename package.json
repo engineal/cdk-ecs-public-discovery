@@ -34,7 +34,7 @@
     "@semantic-release/changelog": "^6.0.2",
     "@semantic-release/exec": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
-    "@types/aws-lambda": "^8.10.110",
+    "@types/aws-lambda": "^8.10.111",
     "@types/jest": "^27.5.2",
     "@types/node": "18.11.19",
     "@typescript-eslint/eslint-plugin": "^5.54.0",
