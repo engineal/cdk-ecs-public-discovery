@@ -62,7 +62,7 @@
     "aws-xray-sdk-core"
   ],
   "dependencies": {
-    "aws-sdk": "^2.1328.0",
+    "aws-sdk": "^2.1336.0",
     "aws-xray-sdk-core": "^3.4.1"
   },
   "stability": "experimental",
