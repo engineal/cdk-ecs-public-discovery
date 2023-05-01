@@ -1,31 +1,25 @@
 /* eslint-disable max-lines */
-import * as AWS from 'aws-sdk';
+import 'aws-sdk-client-mock-jest';
+import {ChangeResourceRecordSetsCommand, ListResourceRecordSetsCommand, Route53} from '@aws-sdk/client-route-53';
 import {Context, EventBridgeEvent} from 'aws-lambda';
+import {DescribeNetworkInterfacesCommand, EC2} from '@aws-sdk/client-ec2';
 import mockedEnv, {RestoreFn} from 'mocked-env';
+import {Task} from '@aws-sdk/client-ecs';
+import {mockClient} from 'aws-sdk-client-mock';
 
-const mockedDescribeNetworkInterfaces = jest.fn();
-const mockedListResourceRecordSets = jest.fn();
-const mockedChangeResourceRecordSets = jest.fn();
-
-jest.mock('aws-sdk', () => ({
-    EC2: jest.fn(() => ({
-        describeNetworkInterfaces: mockedDescribeNetworkInterfaces
-    })),
-    Route53: jest.fn(() => ({
-        changeResourceRecordSets: mockedChangeResourceRecordSets,
-        listResourceRecordSets: mockedListResourceRecordSets
-    }))
-}));
+const ec2Mock = mockClient(EC2);
+const route53Mock = mockClient(Route53);
 
 jest.mock('aws-xray-sdk-core', () => ({
-    captureAWSClient: <T>(client: T) => client
+    captureAWSv3Client: <T>(client: T) => client
 }));
 
 // eslint-disable-next-line init-declarations
 let restore: RestoreFn | undefined;
 
 beforeEach(() => {
-    jest.clearAllMocks();
+    ec2Mock.reset();
+    route53Mock.reset();
 });
 
 afterEach(() => {
@@ -54,7 +48,7 @@ test('Error on missing HOSTED_ZONE_NAME', () => {
         .toThrow('HOSTED_ZONE_NAME environment variable is not set!');
 });
 
-const testUnsupportedEvent: EventBridgeEvent<'ECS Task State Change', AWS.ECS.Task> = {
+const testUnsupportedEvent: EventBridgeEvent<'ECS Task State Change', Task> = {
     'account': '111122223333',
     'detail': {},
     'detail-type': 'ECS Task State Change',
@@ -81,7 +75,7 @@ test('Error on unsupported event', async () => {
         .toThrow('Unknown task ARN!');
 });
 
-const testRunningEvent: EventBridgeEvent<'ECS Task State Change', AWS.ECS.Task> = {
+const testRunningEvent: EventBridgeEvent<'ECS Task State Change', Task> = {
     'account': '111122223333',
     'detail': {
         attachments: [{
@@ -154,26 +148,28 @@ test('Running event upserts record with default TTL', async () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires,global-require
     const lambda = require('../lib/ecs-public-discovery.function');
 
-    mockedDescribeNetworkInterfaces.mockReturnValue({
-        promise: () => Promise.resolve({
-            NetworkInterfaces: [{
-                Association: {
-                    PublicIp: '1.2.3.4'
-                },
-                TagSet: [{
-                    Key: 'public-discovery:name',
-                    Value: 'test'
-                }]
+    ec2Mock.on(DescribeNetworkInterfacesCommand).resolves({
+        NetworkInterfaces: [{
+            Association: {
+                PublicIp: '1.2.3.4'
+            },
+            TagSet: [{
+                Key: 'public-discovery:name',
+                Value: 'test'
             }]
-        })
+        }]
     });
-    mockedChangeResourceRecordSets.mockReturnValue({
-        promise: () => Promise.resolve()
+    route53Mock.on(ChangeResourceRecordSetsCommand).resolves({
+        ChangeInfo: {
+            Id: '1',
+            Status: 'INSYNC',
+            SubmittedAt: new Date()
+        }
     });
 
     await lambda.handler(testRunningEvent, null as unknown as Context, jest.fn());
 
-    expect(mockedChangeResourceRecordSets).toBeCalledWith({
+    expect(route53Mock).toHaveReceivedCommandWith(ChangeResourceRecordSetsCommand, {
         ChangeBatch: {
             Changes: [{
                 Action: 'UPSERT',
@@ -200,29 +196,31 @@ test('Running event upserts record with custom TTL', async () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires,global-require
     const lambda = require('../lib/ecs-public-discovery.function');
 
-    mockedDescribeNetworkInterfaces.mockReturnValue({
-        promise: () => Promise.resolve({
-            NetworkInterfaces: [{
-                Association: {
-                    PublicIp: '1.2.3.4'
-                },
-                TagSet: [{
-                    Key: 'public-discovery:name',
-                    Value: 'test'
-                }, {
-                    Key: 'public-discovery:ttl',
-                    Value: '120'
-                }]
+    ec2Mock.on(DescribeNetworkInterfacesCommand).resolves({
+        NetworkInterfaces: [{
+            Association: {
+                PublicIp: '1.2.3.4'
+            },
+            TagSet: [{
+                Key: 'public-discovery:name',
+                Value: 'test'
+            }, {
+                Key: 'public-discovery:ttl',
+                Value: '120'
             }]
-        })
+        }]
     });
-    mockedChangeResourceRecordSets.mockReturnValue({
-        promise: () => Promise.resolve()
+    route53Mock.on(ChangeResourceRecordSetsCommand).resolves({
+        ChangeInfo: {
+            Id: '1',
+            Status: 'INSYNC',
+            SubmittedAt: new Date()
+        }
     });
 
     await lambda.handler(testRunningEvent, null as unknown as Context, jest.fn());
 
-    expect(mockedChangeResourceRecordSets).toBeCalledWith({
+    expect(route53Mock).toHaveReceivedCommandWith(ChangeResourceRecordSetsCommand, {
         ChangeBatch: {
             Changes: [{
                 Action: 'UPSERT',
@@ -240,7 +238,7 @@ test('Running event upserts record with custom TTL', async () => {
     });
 });
 
-const testRunningWithoutNetworkInterfaceEvent: EventBridgeEvent<'ECS Task State Change', AWS.ECS.Task> = {
+const testRunningWithoutNetworkInterfaceEvent: EventBridgeEvent<'ECS Task State Change', Task> = {
     'account': '111122223333',
     'detail': {
         availabilityZone: 'us-west-2c',
@@ -304,15 +302,13 @@ test('Error on running event without public IP', async () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires,global-require
     const lambda = require('../lib/ecs-public-discovery.function');
 
-    mockedDescribeNetworkInterfaces.mockReturnValue({
-        promise: () => Promise.resolve({
-            NetworkInterfaces: [{
-                TagSet: [{
-                    Key: 'public-discovery:name',
-                    Value: 'test'
-                }]
+    ec2Mock.on(DescribeNetworkInterfacesCommand).resolves({
+        NetworkInterfaces: [{
+            TagSet: [{
+                Key: 'public-discovery:name',
+                Value: 'test'
             }]
-        })
+        }]
     });
 
     await expect(lambda.handler(testRunningEvent, null as unknown as Context, jest.fn())).rejects
@@ -328,21 +324,19 @@ test('Error on running event without name tag', async () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires,global-require
     const lambda = require('../lib/ecs-public-discovery.function');
 
-    mockedDescribeNetworkInterfaces.mockReturnValue({
-        promise: () => Promise.resolve({
-            NetworkInterfaces: [{
-                Association: {
-                    PublicIp: '1.2.3.4'
-                }
-            }]
-        })
+    ec2Mock.on(DescribeNetworkInterfacesCommand).resolves({
+        NetworkInterfaces: [{
+            Association: {
+                PublicIp: '1.2.3.4'
+            }
+        }]
     });
 
     await expect(lambda.handler(testRunningEvent, null as unknown as Context, jest.fn())).rejects
         .toThrow('Task c13b4cb40f1f4fe4a2971f76ae5a47ad does not have the \'public-discovery:name\' tag.');
 });
 
-const testStoppedEvent: EventBridgeEvent<'ECS Task State Change', AWS.ECS.Task> = {
+const testStoppedEvent: EventBridgeEvent<'ECS Task State Change', Task> = {
     'account': '111122223333',
     'detail': {
         attachments: [{
@@ -415,27 +409,29 @@ test('Stopped event deletes record', async () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires,global-require
     const lambda = require('../lib/ecs-public-discovery.function');
 
-    mockedListResourceRecordSets.mockReturnValue({
-        promise: () => Promise.resolve({
-            IsTruncated: false,
-            ResourceRecordSets: [{
-                MultiValueAnswer: true,
-                Name: 'test.example.com',
-                ResourceRecords: [{Value: '1.2.3.4'}],
-                SetIdentifier: 'c13b4cb40f1f4fe4a2971f76ae5a47ad',
-                TTL: 60,
-                Type: 'A'
-            }]
-        })
+    route53Mock.on(ListResourceRecordSetsCommand).resolves({
+        IsTruncated: false,
+        ResourceRecordSets: [{
+            MultiValueAnswer: true,
+            Name: 'test.example.com',
+            ResourceRecords: [{Value: '1.2.3.4'}],
+            SetIdentifier: 'c13b4cb40f1f4fe4a2971f76ae5a47ad',
+            TTL: 60,
+            Type: 'A'
+        }]
     });
 
-    mockedChangeResourceRecordSets.mockReturnValue({
-        promise: () => Promise.resolve()
+    route53Mock.on(ChangeResourceRecordSetsCommand).resolves({
+        ChangeInfo: {
+            Id: '1',
+            Status: 'INSYNC',
+            SubmittedAt: new Date()
+        }
     });
 
     await lambda.handler(testStoppedEvent, null as unknown as Context, jest.fn());
 
-    expect(mockedChangeResourceRecordSets).toBeCalledWith({
+    expect(route53Mock).toHaveReceivedCommandWith(ChangeResourceRecordSetsCommand, {
         ChangeBatch: {
             Changes: [{
                 Action: 'DELETE',
@@ -463,34 +459,36 @@ test('Stopped event deletes 2nd record', async () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires,global-require
     const lambda = require('../lib/ecs-public-discovery.function');
 
-    mockedListResourceRecordSets.mockReturnValue({
-        promise: () => Promise.resolve({
-            IsTruncated: false,
-            ResourceRecordSets: [{
-                MultiValueAnswer: true,
-                Name: 'test.example.com',
-                ResourceRecords: [{Value: '5.6.7.8'}],
-                SetIdentifier: '9256c379f1554f5f8b1d9546c164446e',
-                TTL: 60,
-                Type: 'A'
-            }, {
-                MultiValueAnswer: true,
-                Name: 'test.example.com',
-                ResourceRecords: [{Value: '1.2.3.4'}],
-                SetIdentifier: 'c13b4cb40f1f4fe4a2971f76ae5a47ad',
-                TTL: 60,
-                Type: 'A'
-            }]
-        })
+    route53Mock.on(ListResourceRecordSetsCommand).resolves({
+        IsTruncated: false,
+        ResourceRecordSets: [{
+            MultiValueAnswer: true,
+            Name: 'test.example.com',
+            ResourceRecords: [{Value: '5.6.7.8'}],
+            SetIdentifier: '9256c379f1554f5f8b1d9546c164446e',
+            TTL: 60,
+            Type: 'A'
+        }, {
+            MultiValueAnswer: true,
+            Name: 'test.example.com',
+            ResourceRecords: [{Value: '1.2.3.4'}],
+            SetIdentifier: 'c13b4cb40f1f4fe4a2971f76ae5a47ad',
+            TTL: 60,
+            Type: 'A'
+        }]
     });
 
-    mockedChangeResourceRecordSets.mockReturnValue({
-        promise: () => Promise.resolve()
+    route53Mock.on(ChangeResourceRecordSetsCommand).resolves({
+        ChangeInfo: {
+            Id: '1',
+            Status: 'INSYNC',
+            SubmittedAt: new Date()
+        }
     });
 
     await lambda.handler(testStoppedEvent, null as unknown as Context, jest.fn());
 
-    expect(mockedChangeResourceRecordSets).toBeCalledWith({
+    expect(route53Mock).toHaveReceivedCommandWith(ChangeResourceRecordSetsCommand, {
         ChangeBatch: {
             Changes: [{
                 Action: 'DELETE',
@@ -518,20 +516,18 @@ test('Stopped event deletes record on 2nd page', async () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires,global-require
     const lambda = require('../lib/ecs-public-discovery.function');
 
-    mockedListResourceRecordSets.mockReturnValueOnce({
-        promise: () => Promise.resolve({
-            IsTruncated: true,
-            ResourceRecordSets: [{
-                MultiValueAnswer: true,
-                Name: 'test.example.com',
-                ResourceRecords: [{Value: '5.6.7.8'}],
-                SetIdentifier: '9256c379f1554f5f8b1d9546c164446e',
-                TTL: 60,
-                Type: 'A'
-            }]
-        })
-    }).mockReturnValueOnce({
-        promise: () => Promise.resolve({
+    route53Mock.on(ListResourceRecordSetsCommand).resolvesOnce({
+        IsTruncated: true,
+        ResourceRecordSets: [{
+            MultiValueAnswer: true,
+            Name: 'test.example.com',
+            ResourceRecords: [{Value: '5.6.7.8'}],
+            SetIdentifier: '9256c379f1554f5f8b1d9546c164446e',
+            TTL: 60,
+            Type: 'A'
+        }]
+    })
+        .resolvesOnce({
             IsTruncated: false,
             ResourceRecordSets: [{
                 MultiValueAnswer: true,
@@ -541,19 +537,22 @@ test('Stopped event deletes record on 2nd page', async () => {
                 TTL: 60,
                 Type: 'A'
             }]
-        })
-    });
+        });
 
-    mockedChangeResourceRecordSets.mockReturnValue({
-        promise: () => Promise.resolve()
+    route53Mock.on(ChangeResourceRecordSetsCommand).resolves({
+        ChangeInfo: {
+            Id: '1',
+            Status: 'INSYNC',
+            SubmittedAt: new Date()
+        }
     });
 
     await lambda.handler(testStoppedEvent, null as unknown as Context, jest.fn());
 
     // eslint-disable-next-line no-magic-numbers
-    expect(mockedListResourceRecordSets).toBeCalledTimes(2);
+    expect(route53Mock).toHaveReceivedCommandTimes(ListResourceRecordSetsCommand, 2);
 
-    expect(mockedChangeResourceRecordSets).toBeCalledWith({
+    expect(route53Mock).toHaveReceivedCommandWith(ChangeResourceRecordSetsCommand, {
         ChangeBatch: {
             Changes: [{
                 Action: 'DELETE',
@@ -580,14 +579,12 @@ test('Stopped event without record', async () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires,global-require
     const lambda = require('../lib/ecs-public-discovery.function');
 
-    mockedListResourceRecordSets.mockReturnValue({
-        promise: () => Promise.resolve({
-            IsTruncated: false,
-            ResourceRecordSets: []
-        })
+    route53Mock.on(ListResourceRecordSetsCommand).resolves({
+        IsTruncated: false,
+        ResourceRecordSets: []
     });
 
     await lambda.handler(testStoppedEvent, null as unknown as Context, jest.fn());
 
-    expect(mockedChangeResourceRecordSets).not.toBeCalled();
+    expect(route53Mock).not.toHaveReceivedCommand(ChangeResourceRecordSetsCommand);
 });
