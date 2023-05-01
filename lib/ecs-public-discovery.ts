@@ -117,6 +117,15 @@ export class EcsPublicDiscovery extends Construct {
         if (options.dnsTtl) {
             Tags.of(options.service).add('public-discovery:ttl', String(options.dnsTtl.toSeconds()));
         }
+
+        if (Stack.of(options.service) === Stack.of(this)) {
+            /*
+             * Add this construct as a dependency to the service to ensure that the service is created only after this
+             * construct is fully deployed and deleted before this construct is deleted; ensuring proper creation of the
+             * initial DNS record and deletion of the final DNS records.
+             */
+            options.service.node.addDependency(this);
+        }
     }
 
 }

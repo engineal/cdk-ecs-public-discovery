@@ -129,6 +129,7 @@ test('Rule created', () => {
     });
 });
 
+// eslint-disable-next-line max-lines-per-function
 test('Tags added to Fargate service', () => {
     const stack = new cdk.Stack();
 
@@ -164,17 +165,27 @@ test('Tags added to Fargate service', () => {
 
     const template = Template.fromStack(stack);
 
-    template.hasResourceProperties('AWS::ECS::Service', {
-        Tags: [
-            {
-                Key: 'public-discovery:name',
-                Value: 'test'
-            },
-            {
-                Key: 'public-discovery:ttl',
-                Value: '60'
-            }
-        ]
+    template.hasResource('AWS::ECS::Service', {
+        DependsOn: [
+            'EcsPublicDiscoveryfunctionLogRetention84657F35',
+            'EcsPublicDiscoveryfunction23A3479F',
+            'EcsPublicDiscoveryfunctionServiceRoleDefaultPolicyCC653CEF',
+            'EcsPublicDiscoveryfunctionServiceRole6B6A990F',
+            'EcsPublicDiscoveryRoute53UpdaterFunctionRuleAllowEventRuleEcsPublicDiscoveryfunction603C2B5EAC80E275',
+            'EcsPublicDiscoveryRoute53UpdaterFunctionRuleE5C51ACF'
+        ],
+        Properties: {
+            Tags: [
+                {
+                    Key: 'public-discovery:name',
+                    Value: 'test'
+                },
+                {
+                    Key: 'public-discovery:ttl',
+                    Value: '60'
+                }
+            ]
+        }
     });
 });
 
@@ -222,17 +233,27 @@ test('Tags added to EC2 service', () => {
 
     const template = Template.fromStack(stack);
 
-    template.hasResourceProperties('AWS::ECS::Service', {
-        Tags: [
-            {
-                Key: 'public-discovery:name',
-                Value: 'test'
-            },
-            {
-                Key: 'public-discovery:ttl',
-                Value: '60'
-            }
-        ]
+    template.hasResource('AWS::ECS::Service', {
+        DependsOn: [
+            'EcsPublicDiscoveryfunctionLogRetention84657F35',
+            'EcsPublicDiscoveryfunction23A3479F',
+            'EcsPublicDiscoveryfunctionServiceRoleDefaultPolicyCC653CEF',
+            'EcsPublicDiscoveryfunctionServiceRole6B6A990F',
+            'EcsPublicDiscoveryRoute53UpdaterFunctionRuleAllowEventRuleEcsPublicDiscoveryfunction603C2B5EAC80E275',
+            'EcsPublicDiscoveryRoute53UpdaterFunctionRuleE5C51ACF'
+        ],
+        Properties: {
+            Tags: [
+                {
+                    Key: 'public-discovery:name',
+                    Value: 'test'
+                },
+                {
+                    Key: 'public-discovery:ttl',
+                    Value: '60'
+                }
+            ]
+        }
     });
 });
 
