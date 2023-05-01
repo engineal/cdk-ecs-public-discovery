@@ -1,10 +1,12 @@
 /* eslint-disable no-console,no-process-env */
-import * as AWS from 'aws-sdk';
 import * as AWSXRay from 'aws-xray-sdk-core';
+import {EC2, NetworkInterface, Tag} from '@aws-sdk/client-ec2';
+import {ResourceRecordSet, Route53} from '@aws-sdk/client-route-53';
 import {EventBridgeHandler} from 'aws-lambda';
+import {Task} from '@aws-sdk/client-ecs';
 
-const ec2Client = AWSXRay.captureAWSClient(new AWS.EC2());
-const route53Client = AWSXRay.captureAWSClient(new AWS.Route53());
+const ec2Client = AWSXRay.captureAWSv3Client(new EC2({}));
+const route53Client = AWSXRay.captureAWSv3Client(new Route53({}));
 
 const DEFAULT_TTL = 60;
 
@@ -20,7 +22,7 @@ if (!hostedZoneName) {
     throw new Error('HOSTED_ZONE_NAME environment variable is not set!');
 }
 
-const getNetworkInterfaceForTask = async (task: AWS.ECS.Task, taskId: string): Promise<AWS.EC2.NetworkInterface> => {
+const getNetworkInterfaceForTask = async (task: Task, taskId: string): Promise<NetworkInterface> => {
     const networkInterfaceId = task.attachments
         ?.find(attachment => attachment.type === 'eni')?.details
         ?.find(details => details.name === 'networkInterfaceId')?.value;
@@ -30,7 +32,7 @@ const getNetworkInterfaceForTask = async (task: AWS.ECS.Task, taskId: string): P
     }
     const networkInterfacesResponse = await ec2Client.describeNetworkInterfaces({
         NetworkInterfaceIds: [networkInterfaceId]
-    }).promise();
+    });
 
     if (!networkInterfacesResponse.NetworkInterfaces) {
         throw new Error('DescribeNetworkInterfaces did not return any network interfaces!');
@@ -40,9 +42,9 @@ const getNetworkInterfaceForTask = async (task: AWS.ECS.Task, taskId: string): P
     return networkInterfacesResponse.NetworkInterfaces[0];
 };
 
-const getTag = (key: string, tags?: AWS.EC2.TagList): string | undefined => tags?.find(tag => tag.Key === key)?.Value;
+const getTag = (key: string, tags?: Tag[]): string | undefined => tags?.find(tag => tag.Key === key)?.Value;
 
-const getRequiredTag = (key: string, error: string, tags?: AWS.EC2.TagList): string => {
+const getRequiredTag = (key: string, error: string, tags?: Tag[]): string => {
     const tag = getTag(key, tags);
 
     if (!tag) {
@@ -52,7 +54,7 @@ const getRequiredTag = (key: string, error: string, tags?: AWS.EC2.TagList): str
     return tag;
 };
 
-const handleTaskRunning = async (taskId: string, networkInterface: AWS.EC2.NetworkInterface) => {
+const handleTaskRunning = async (taskId: string, networkInterface: NetworkInterface) => {
     const nameTag = getRequiredTag(
         'public-discovery:name',
         `Task ${taskId} does not have the 'public-discovery:name' tag.`,
@@ -85,7 +87,7 @@ const handleTaskRunning = async (taskId: string, networkInterface: AWS.EC2.Netwo
             }]
         },
         HostedZoneId: hostedZoneId
-    }).promise();
+    });
 };
 
 const getResourceRecordSetByIdentifier = async (
@@ -94,15 +96,17 @@ const getResourceRecordSetByIdentifier = async (
     startRecordName?: string,
     startRecordType?: string
 // eslint-disable-next-line max-params
-): Promise<AWS.Route53.ResourceRecordSet | undefined> => {
+): Promise<ResourceRecordSet | undefined> => {
+    // eslint-disable-next-line no-warning-comments
+    // TODO: replace with paginate when added to AWS SDK
     const resourceRecordSetsResponse = await route53Client.listResourceRecordSets({
         HostedZoneId: hostedZoneId,
         StartRecordIdentifier: startRecordIdentifier,
         StartRecordName: startRecordName,
         StartRecordType: startRecordType
-    }).promise();
+    });
 
-    const resourceRecordSet = resourceRecordSetsResponse.ResourceRecordSets.find(rrs => rrs.MultiValueAnswer &&
+    const resourceRecordSet = resourceRecordSetsResponse.ResourceRecordSets?.find(rrs => rrs.MultiValueAnswer &&
         rrs.Type === 'A' && rrs.SetIdentifier === setIdentifier);
 
     if (resourceRecordSet) {
@@ -151,10 +155,10 @@ const handleTaskStopped = async (taskId: string) => {
             }]
         },
         HostedZoneId: hostedZoneId
-    }).promise();
+    });
 };
 
-export const handler: EventBridgeHandler<'ECS Task State Change', AWS.ECS.Task, void> = async event => {
+export const handler: EventBridgeHandler<'ECS Task State Change', Task, void> = async event => {
     const {taskArn} = event.detail;
 
     if (!taskArn) {
