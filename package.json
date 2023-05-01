@@ -39,22 +39,22 @@
     "@types/node": "18.11.19",
     "@typescript-eslint/eslint-plugin": "^5.54.0",
     "@typescript-eslint/parser": "^5.52.0",
-    "aws-cdk-lib": "2.65.0",
+    "aws-cdk-lib": "2.77.0",
     "constructs": "10.0.0",
     "eslint": "^8.35.0",
     "husky": "^8.0.3",
     "is-ci": "^3.0.1",
     "jest": "^27.5.1",
-    "jsii": "^1.76.0",
-    "jsii-pacmak": "^1.76.0",
-    "jsii-release": "^0.2.610",
+    "jsii": "^5.0.7",
+    "jsii-pacmak": "^1.80.0",
+    "jsii-release": "^0.2.667",
     "mocked-env": "^1.3.5",
     "semantic-release": "^20.1.1",
     "ts-jest": "^27.1.5",
     "typescript": "~4.9.5"
   },
   "peerDependencies": {
-    "aws-cdk-lib": "2.65.0",
+    "aws-cdk-lib": "2.77.0",
     "constructs": "^10.0.0"
   },
   "bundledDependencies": [
