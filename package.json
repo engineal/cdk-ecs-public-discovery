@@ -68,7 +68,7 @@
   "dependencies": {
     "@aws-sdk/client-ec2": "^3.322.0",
     "@aws-sdk/client-ecs": "^3.321.1",
-    "@aws-sdk/client-route-53": "^3.321.1",
+    "@aws-sdk/client-route-53": "^3.337.0",
     "aws-xray-sdk-core": "^3.5.0"
   },
   "stability": "experimental",
